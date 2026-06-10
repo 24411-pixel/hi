@@ -25,68 +25,80 @@ def kakao_text(text):
 
 @app.route("/", methods=["GET"])
 def home():
-    return "유니버셜 복약 가전 '라포(Rapport)' IoT 제어 서버가 구동 중입니다."
+    return "고령층 안심 복약 가전 '라포(Rapport)' 실버 IoT 서버가 정상 구동 중입니다."
 
 
-# [블록 1용] 테스트 및 하드웨어 페어링 확인용 랜덤 코드
+# =====================================================================
+# [시나리오 1 / 블록 1 관련] 기기 배터리 및 알약 잔량 상태 원격 조회 스킬
+# =====================================================================
 @app.route("/device-status", methods=["GET", "POST"])
 def device_status():
     status_code = random.randint(1, 3)
     if status_code == 1:
-        msg = "🔄 [라포 디바이스 상태]: 정상 연결됨 / 잔여 배터리 85%"
+        msg = "🔋 [라포 안심 확인]\n\n어르신, 현재 약통 기기가 정상적으로 잘 연결되어 있습니다. 안심하셔도 좋습니다!\n\n* 남은 배터리: 85% (충분함)"
     elif status_code == 2:
-        msg = "⚠️ [라포 디바이스 상태]: 내부 약통(1번 모듈)의 약이 부족합니다. 충전해 주세요."
+        msg = "⚠️ [라포 알림]\n\n어르신, 1번 약통에 보관된 알약이 얼마 남지 않았습니다. 자녀분이나 생활지원사분께 약을 채워달라고 말씀해 주세요."
     else:
-        msg = "ℹ️ [라포 디바이스 상태]: 디바이스가 절전 모드입니다. 카톡 명령 시 해제됩니다."
+        msg = "ℹ️ [라포 상태 안내]\n\n현재 약통 기기가 절전 모드입니다. 약 드실 시간이 되면 자동으로 알림 불빛이 켜지니 걱정 마세요."
     return jsonify(kakao_text(msg))
 
 
-# [블록 2용] 사용자가 등록한 제품 외형 및 UI 가이드 이미지 출력
-@app.route("/device-image", methods=["GET", "POST"])
-def device_image():
-    response = {
-        "version": "2.0",
-        "template": {
-            "outputs": [
-                {
-                    "simpleImage": {
-                        "imageUrl": "https://t1.daumcdn.net/friends/prod/category/M001_friends_ryan2.jpg",
-                        "altText": "유니버셜 복약 가전 '라포' 하드웨어 CMF 가이드 라인",
-                    }
-                }
-            ]
-        },
-    }
-    return jsonify(response)
-
-
-# [블록 3용] 사용자 불편사항/개선 아이디어 수집 (서비스 디자인 에셋)
-@app.route("/design-feedback", methods=["POST"])
-def design_feedback():
+# =====================================================================
+# [시나리오 2 / 블록 7 관련] 핵심: Gemini AI 건강비서 및 하드웨어 LED 연동 스킬
+# =====================================================================
+@app.route("/ai-dose-docent", methods=["POST"])
+def ai_dose_docent():
     data = request.get_json(silent=True) or {}
-    user_input = data.get("userRequest", {}).get("utterance", "입력값이 없습니다.")
-    reply = (
-        f"✍️ [디자인 피드백 접수완료]\n\n"
-        f"보내주신 내용: \"{user_input}\"\n\n"
-        f"시각장애인 사용성 개선을 위한 제품 2차 고도화(UI/UX 수정) 과정에 소중히 반영하겠습니다."
+    
+    # 오픈빌더에 설정한 '파라미터' 값을 먼저 가져오고, 없으면 어르신의 전체 입력 문장을 사용합니다.
+    tt = data.get("action", {}).get("params", {}).get("파라미터", "").strip()
+    if not tt:
+        tt = data.get("userRequest", {}).get("utterance", "").strip()
+
+    if not tt or tt == "약 검색":
+        return jsonify(kakao_text("궁금하신 알약의 이름을 입력해 주세요.\n\n(예: 타이레놀 알려줘)"))
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return jsonify(kakao_text("서버에 GEMINI_API_KEY가 설정되지 않았습니다."))
+
+    # 실버 디자인 콘셉트에 맞춘 고령층 친화적 프롬프트 엔지니어링 세팅
+    system_instruction = (
+        "당신은 고령층 어르신들을 위한 스마트 약통 '라포(Rapport)'의 다정한 건강 비서 AI입니다. "
+        "글씨가 잘 안 보이고 복잡한 것을 싫어하시는 노년층 사용자가 약 이름을 입력하면 다음 규칙을 무조건 지켜서 답변하세요:\n"
+        "1. 전문 용어를 완전히 배제하고, '감기 기운 잡는 약', '피를 맑게 해주는 혈압약'처럼 초등학생도 알기 쉽게 효능을 딱 2줄로 설명하세요.\n"
+        "2. 가장 중요한 복용 타이밍(예: 아침 식사하고 바로 드세요!)을 이모티콘을 섞어 아주 크고 명확하게 강조해 주세요.\n"
+        "3. 마지막 줄에는 반드시 '💡 [라포 스마트 약통 연동 완료]: 어르신이 헷갈리지 않도록 해당 알약이 들어있는 약통 칸에 밝은 가이드 불빛(LED)을 켰습니다!' 라는 문장으로 마무리하세요."
     )
-    return jsonify(kakao_text(reply))
+
+    try:
+        client = genai.Client(api_key=api_key)
+        full_prompt = f"{system_instruction}\n\n사용자 질문(약이름): {tt}"
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash", contents=full_prompt
+        )
+        result_text = response.text if response.text else "AI 분석에 실패했습니다."
+    except Exception as e:
+        result_text = f"Gemini 건강 비서 시스템 오류: {str(e)}"
+
+    return jsonify(kakao_text(result_text))
 
 
-# [블록 4용] 사용자가 입력한 약에 대한 최신 뉴스/부작용 정보 검색 크롤링
+# =====================================================================
+# [시나리오 2 / 블록 8 관련] 의약품 오남용 및 부작용 방지 최신 뉴스 크롤링 스킬
+# =====================================================================
 @app.route("/medication-news", methods=["POST"])
 def medication_news():
     data = request.get_json(silent=True) or {}
-    user_input = (
-        data.get("action", {}).get("params", {}).get("파라미터", "").strip()
-    )
+    user_input = data.get("action", {}).get("params", {}).get("파라미터", "").strip()
     if not user_input:
         user_input = data.get("userRequest", {}).get("utterance", "").strip()
 
-    if not user_input:
-        return jsonify(kakao_text("조회할 의약품 이름을 입력해 주세요."))
+    if not user_input or user_input == "부작용 뉴스":
+        return jsonify(kakao_text("부작용을 확인할 약 이름을 입력해 주세요."))
 
-    search_query = f"{user_input} 주의사항"
+    search_query = f"{user_input} 부작용 주의사항"
     query = urllib.parse.quote(search_query)
     url = f"https://search.naver.com/search.naver?where=news&query={query}"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -102,20 +114,22 @@ def medication_news():
 
         if titles:
             result_text = (
-                f"📰 [{user_input}] 관련 필수 안전 정보 뉴스:\n\n"
-                + "\n\n".join([f"{i+1}. {title}" for i, title in enumerate(titles)])
-                + "\n\n⚠️ 복용 전 위 뉴스 항목의 부작용 사례를 반드시 확인하세요."
+                f"📰 [{user_input}] 꼭 알아야 할 안심 안전 뉴스\n\n"
+                + "\n\n".join([f"👵 {title}" for title in titles])
+                + f"\n\n⚠️ 다른 약과 함께 드실 때는 자녀분이나 의사 선생님께 꼭 한 번 물어보고 드시는 것이 안전합니다."
             )
         else:
-            result_text = f"'{user_input}'에 대한 최근 안전 뉴스가 없습니다. 정량 복용을 권장합니다."
+            result_text = f"'{user_input}'에 대한 특이 부작용 뉴스가 최근 없습니다. 안심하고 정량 복용하세요."
 
     except Exception as e:
-        result_text = f"안전 정보 조회 중 시스템 오류: {str(e)}"
+        result_text = f"안전 뉴스 확인 중 오류 발생: {str(e)}"
 
     return jsonify(kakao_text(result_text))
 
 
-# [블록 5용] 시각장애인 외출 환경 분석을 위한 실시간 울산 날씨 가이드 크롤링
+# =====================================================================
+# [시나리오 3 / 블록 12 관련] 실시간 울산 날씨 정보 기반 생활 건강 가이드 스킬
+# =====================================================================
 @app.route("/blind-weather-guide", methods=["GET", "POST"])
 def blind_weather_guide():
     try:
@@ -133,52 +147,34 @@ def blind_weather_guide():
             weather_desc = summary.get_text(strip=True)
 
             result_text = (
-                f"☀️ [라포 웰니스 매니저: 실시간 외출 가이드]\n\n"
+                f"🌦️ [라포 매니저의 오늘의 날씨 가이드]\n\n"
                 f"현재 울산 지역은 {weather_brief} 상태이며, {weather_desc}.\n\n"
-                f"💡 시각장애인 사용자의 안전한 도보 이동을 위해 우산 소지 여부나 눈/비로 인한 미끄러짐에 주의하라고 제품 음성(TTS) 가이드를 송출합니다."
+                f"💡 [어르신 행동 가이드]\n"
+                f"오늘같이 환절기 날씨에는 혈압이 갑자기 변할 수 있으니 혈압약을 거르지 말고 꼭 챙겨 드세요. "
+                f"외출 시에는 따뜻한 외투를 입으시는 것을 추천합니다!"
             )
         else:
             result_text = "날씨 센서 데이터를 가져오지 못했습니다."
 
     except Exception as e:
-        result_text = f"외출 가이드 조회 중 오류 발생: {str(e)}"
+        result_text = f"날씨 조회 중 오류 발생: {str(e)}"
 
     return jsonify(kakao_text(result_text))
 
 
-# [블록 6용] 핵심: Gemini를 활용한 약 인지 및 제품 VUI 인터랙션
-@app.route("/ai-dose-docent", methods=["POST"])
-def ai_dose_docent():
+# =====================================================================
+# [시나리오 3 / 블록 14 관련] 노년층 사용성 개선 피드백 수집 스킬
+# =====================================================================
+@app.route("/design-feedback", methods=["POST"])
+def design_feedback():
     data = request.get_json(silent=True) or {}
-    tt = data.get("action", {}).get("params", {}).get("파라미터", "").strip()
-
-    if not tt:
-        return jsonify(kakao_text("알아보고자 하는 약 이름을 말씀해 주세요."))
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return jsonify(kakao_text("서버에 GEMINI_API_KEY가 설정되지 않았습니다."))
-
-    system_instruction = (
-        "당신은 유니버셜 스마트 약통 '라포(Rapport)'의 지능형 음성 UI 인터페이스입니다. "
-        "시각장애인이나 약을 헷갈리기 쉬운 노약자가 약 이름을 입력하면 "
-        "1. 어떤 효능이 있는 약인지 초등학생도 이해할 수 있게 2줄로 요약하고 "
-        "2. 반드시 지켜야 할 복용 타이밍(식전/식후 등)을 큰 글씨 느낌으로 강조해 주세요. "
-        "3. 마지막 줄에는 반드시 '[라포 하드웨어 연동 부가알림]: 해당 약이 보관된 모듈 가이드 LED 점등 및 점자 돌기 개방 완료.' 라는 문장을 출력하세요."
+    user_input = data.get("userRequest", {}).get("utterance", "입력값이 없습니다.")
+    reply = (
+        f"✍️ [의견 접수 완료]\n\n"
+        f"보내주신 내용: \"{user_input}\"\n\n"
+        f"어르신들이 글씨를 읽거나 약통을 쓰실 때 더 편하도록, 하드웨어 및 글자 크기 디자인 수정에 꼭 반영하겠습니다. 감사합니다!"
     )
-
-    try:
-        client = genai.Client(api_key=api_key)
-        full_prompt = f"{system_instruction}\n\n사용자 질문(약이름): {tt}"
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash", contents=full_prompt
-        )
-        result_text = response.text if response.text else "AI 분석에 실패했습니다."
-    except Exception as e:
-        result_text = f"Gemini 인터페이스 구동 오류: {str(e)}"
-
-    return jsonify(kakao_text(result_text))
+    return jsonify(kakao_text(reply))
 
 
 if __name__ == "__main__":
