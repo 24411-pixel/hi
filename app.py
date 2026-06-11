@@ -58,7 +58,7 @@ def ai_dose_docent():
     if not tt or tt == "약 검색":
         return jsonify(kakao_text("궁금하신 알약의 이름을 입력해 주세요.\n\n(예: 타이레놀 알려줘)"))
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("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")
     if not api_key:
         return jsonify(kakao_text("서버에 GEMINI_API_KEY가 설정되지 않았습니다."))
 
