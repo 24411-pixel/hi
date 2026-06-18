@@ -6,7 +6,7 @@ import urllib.parse
 import urllib.request
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, request
-from google import genai
+from openai import OpenAI
 
 app = Flask(__name__)
 
@@ -25,7 +25,7 @@ def kakao_text(text):
 
 @app.route("/", methods=["GET"])
 def home():
-    return "고령층 안심 복약 가전 '라포(Rapport)' 실버 IoT 서버가 정상 구동 중입니다."
+    return "고령층 안심 복약 가전 '라포(Rapport)' 실버 IoT 서버(OpenAI 버전)가 구동 중입니다."
 
 
 # =====================================================================
@@ -44,7 +44,7 @@ def device_status():
 
 
 # =====================================================================
-# [시나리오 2 / 블록 7 관련] 핵심: Gemini AI 건강비서 및 하드웨어 LED 연동 스킬
+# [시나리오 2 / 블록 7 관련] 핵심: ChatGPT 안심 복약 가이드 및 LED 연동 스킬
 # =====================================================================
 @app.route("/ai-dose-docent", methods=["POST"])
 def ai_dose_docent():
@@ -58,10 +58,8 @@ def ai_dose_docent():
     if not tt or tt == "약 검색":
         return jsonify(kakao_text("궁금하신 알약의 이름을 입력해 주세요.\n\n(예: 타이레놀 알려줘)"))
 
-    api_key = os.getenv("AIzaSyBBFN99XnZYKjfXmseS4lGwvA7KMH0P1j4
-")
-    if not api_key:
-        return jsonify(kakao_text("서버에 GEMINI_API_KEY가 설정되지 않았습니다."))
+    # 👈 전송해주신 OpenAI API 키를 줄바꿈 없이 한 줄로 정확히 삽입했습니다.
+    api_key = os.getenv("OPENAI_API_KEY", "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")
 
     # 실버 디자인 콘셉트에 맞춘 고령층 친화적 프롬프트 엔지니어링 세팅
     system_instruction = (
@@ -73,15 +71,18 @@ def ai_dose_docent():
     )
 
     try:
-        client = genai.Client(api_key=api_key)
-        full_prompt = f"{system_instruction}\n\n사용자 질문(약이름): {tt}"
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash", contents=full_prompt
+        client = OpenAI(api_key=api_key)
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": f"사용자 질문(약이름): {tt}"}
+            ]
         )
-        result_text = response.text if response.text else "AI 분석에 실패했습니다."
+        result_text = response.choices[0].message.content.strip()
     except Exception as e:
-        result_text = f"Gemini 건강 비서 시스템 오류: {str(e)}"
+        result_text = f"ChatGPT 건강 비서 시스템 오류: {str(e)}"
 
     return jsonify(kakao_text(result_text))
 
